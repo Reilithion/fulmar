@@ -72,6 +72,11 @@
           (immediate ">")))
 (provide sur-anbr)
 
+;string literal (surround quotes)
+(define (string-literal . strings)
+  (surround "\"" (apply string-append (flatten strings))))
+(provide string-literal)
+
 ;;;;;;;;;;;;;;;;;;;;;;
 ;list chunks;;;;;;;;;;
 ;;;;;;;;;;;;;;;;;;;;;;
