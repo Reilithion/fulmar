@@ -1,0 +1,198 @@
+#lang fulmar
+
+; Author: Lucas Adam M. Paul
+; This is a prototype for better handling of C++ data type
+; declaration under Fulmar.
+
+;;; PRIVATE FULMAR STUFF ;;;
+
+(define (integral-type? i)
+  (memq i '(char
+            int
+            ())))
+
+(define (float-type? i)
+  (memq i '(float
+            double)))
+
+(define (sizable-type? i)
+  (or (integral-type? i)
+      (float-type? i)))
+
+(struct fmrInternal-type
+  (base)
+  #:transparent)
+
+(struct fmrInternal-qualified-type fmrInternal-type
+  (const
+   volatile)
+  #:transparent
+  #:guard (λ (base const volatile name)
+            (unless (or (symbol? base) (null? base) (fmrInternal-type? base))
+              (error "Invalid base type: " base))
+            (values base const volatile)))
+
+(struct fmrInternal-moddable-type fmrInternal-qualified-type
+  (signedness
+   size)
+  #:guard (λ (base const volatile signedness size name)
+            (unless (and (or (not size) (sizable-type? base))
+                         (or (not signedness) (integral-type? base)))
+              (error "Cannot modify non-base type:" base signedness size))
+            (values base const volatile signedness size)))
+
+(struct fmrInternal-pointer-type fmrInternal-qualified-type
+  (ptr-or-ref)
+  #:guard (λ (base const volatile ptr-or-ref name)
+            (let ([pr (match ptr-or-ref
+                        ['ptr '*]
+                        ['pointer '*]
+                        ['* '*]
+                        ['ref '&]
+                        ['reference '&]
+                        ['& '&]
+                        [_ (error "A pointer type must be either a 'pointer or a 'reference.")])])
+              (unless (fmrInternal-type? base)
+                (error "Invalid pointer type:" base))
+              (when (match base
+                      [(fmrInternal-pointer-type _ _ _ '&) #t]
+                      [_ #f])
+                (error "Pointers or references to references are illegal in C++."))
+              (when (and (eq? pr '&) (or const volatile))
+                (error "References qualified const or volatile are ill-formed in C++."))
+              (values base const volatile pr))))
+
+(struct fmrInternal-array-type fmrInternal-type
+  (size)
+  #:guard (λ (base size name)
+            (unless (fmrInternal-type? base)
+              (error "Cannot make an array of " base))
+            (when (match base
+                    [(fmrInternal-pointer-type _ _ _ '&) #t]
+                    [_ #f])
+              (error "Arrays of references are illegal in C++."))
+            (values base size)))
+
+(define (cat-const const t)
+  (if const (concat 'const " " t) t))
+(define (cat-volatile volatile t)
+  (if volatile (concat 'volatile " " t) t))
+
+(define (fmrInternal-render-simple-type type)
+  (define (real-base b)
+    (match b
+      ['() #;=> 'int]
+      [#f  #;=> 'int]
+      [""  #;=> 'int]
+      [_   #;=> b]))
+  (define (cat-size size t)
+    (match size
+      ['() #;=> t]
+      [#f  #;=> t]
+      [""  #;=> t]
+      [_   #;=> (concat size " " t)]))
+  (define (cat-sign sign t)
+    (match sign
+      ['() #;=> t]
+      [""  #;=> t]
+      [#f  #;=> (concat 'unsigned " " t)]
+      [#t  #;=> (concat 'signed " " t)]
+      [_   #;=> (concat sign " " t)]))
+  (match type
+    [(fmrInternal-moddable-type base
+                                const
+                                volatile
+                                signedness
+                                size)
+     #;=>
+     (cat-const
+      const
+      (cat-volatile
+       volatile
+       (cat-size
+        size
+        (cat-sign
+         signedness
+         (real-base base)))))]
+    [(fmrInternal-qualified-type base
+                                 const
+                                 volatile)
+     #;=>
+     (cat-const const (cat-volatile volatile (real-base base)))]))
+
+;;; PUBLIC INSTANTIATORS FOR FULMAR C++ TYPES ;;;
+
+(define (fmr-variable-decl type name)
+  (match type
+    [(fmrInternal-pointer-type
+      (and base
+           (fmrInternal-array-type _ _))
+      const volatile pr-sym)
+     #;=>
+     (fmr-variable-decl
+      base
+      (concat "(" pr-sym (cat-const const (cat-volatile volatile name)) ")"))]
+    [(fmrInternal-pointer-type base const volatile pr-sym)
+     #;=>
+     (fmr-variable-decl
+      base
+      (concat pr-sym (cat-const const (cat-volatile volatile name))))]
+    [(fmrInternal-array-type base size)
+     #;=>
+     (fmr-variable-decl base (concat name "[" size "]"))]
+    [_
+     #;=>
+     (concat (fmrInternal-render-simple-type type) " " name)]))
+
+(define (fmr-type-decl type)
+  (fmr-variable-decl type ""))
+
+;;; PUBLIC CONSTRUCTORS FOR FULMAR C++ TYPES ;;;
+
+(define (fmr-primitive-type base
+                            #:const [const #f]
+                            #:volatile [volatile #f]
+                            #:signedness [signed ""]
+                            #:size [size #f])
+  (fmrInternal-moddable-type base const volatile signed size))
+
+(define (fmr-pointer base
+                     #:const [const #f]
+                     #:volatile [volatile #f])
+  (fmrInternal-pointer-type base const volatile '*))
+
+(define (fmr-reference base)
+  (fmrInternal-pointer-type base #f #f '&))
+
+(define (fmr-array base #:size [size ""])
+  (fmrInternal-array-type base size))
+
+(define (fmr-assign var val)
+  (concat var " = " val))
+
+;;; ABBREVIATIONS FOR THIS FILE ;;;
+
+(define (fmr-for init check next . chunks)
+  (concat (function-call 'for (between "; " init check next)) " "
+          (body chunks)))
+
+(define (unsigned-int name)
+  (fmr-variable-decl (fmr-primitive-type #:signedness #f 'int) name))
+
+;;; BEGIN OUTPUT ;;;
+
+(pp-include 'process_record.h)
+
+(void-function-define
+ 'process_all
+ (list (unsigned-int 'max))
+ ; Declare a pointer to an array of 10 ints, calling it x.
+ (fmr-variable-decl
+  (fmr-pointer (fmr-array #:size "10" (fmr-primitive-type 'int))) 'x)
+ ; Declare an array of 10 pointers to ints, calling it y.
+ (fmr-variable-decl
+  (fmr-array #:size "10" (fmr-pointer (fmr-primitive-type 'int))) 'y)
+ (fmr-for (fmr-assign (unsigned-int 'i) "0")
+          "i < max"
+          "++i"
+          (function-call 'process_record 'i)))
