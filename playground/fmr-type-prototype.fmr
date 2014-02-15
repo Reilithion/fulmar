@@ -28,7 +28,8 @@
    volatile)
   #:transparent
   #:guard (λ (base const volatile name)
-            (unless (or (symbol? base) (null? base) (fmrInternal-type? base))
+            ; Get rid of null check
+            (unless (or (symbol? base) #;(null? base) (fmrInternal-type? base))
               (error "Invalid base type: " base))
             (values base const volatile)))
 
@@ -41,6 +42,7 @@
               (error "Cannot modify non-base type:" base signedness size))
             (values base const volatile signedness size)))
 
+; Make seperate representations for pointers and references
 (struct fmrInternal-pointer-type fmrInternal-qualified-type
   (ptr-or-ref)
   #:guard (λ (base const volatile ptr-or-ref name)
@@ -73,6 +75,7 @@
               (error "Arrays of references are illegal in C++."))
             (values base size)))
 
+; put const and volatile after stuff consistently
 (define (cat-const const t)
   (if const (concat 'const " " t) t))
 (define (cat-volatile volatile t)
@@ -80,6 +83,7 @@
 
 (define (fmrInternal-render-simple-type type)
   (define (real-base b)
+    ; Do not support absent int type declarations
     (match b
       ['() #;=> 'int]
       [#f  #;=> 'int]
@@ -99,6 +103,7 @@
       [#t  #;=> (concat 'signed " " t)]
       [_   #;=> (concat sign " " t)]))
   (match type
+    ; fix code duplication?
     [(fmrInternal-moddable-type base
                                 const
                                 volatile
@@ -122,6 +127,7 @@
 
 ;;; PUBLIC INSTANTIATORS FOR FULMAR C++ TYPES ;;;
 
+; support static
 (define (fmr-variable-decl type name)
   (match type
     [(fmrInternal-pointer-type
@@ -142,6 +148,7 @@
      (fmr-variable-decl base (concat name "[" size "]"))]
     [_
      #;=>
+     ; Use between spaces
      (concat (fmrInternal-render-simple-type type) " " name)]))
 
 (define (fmr-type-decl type)
