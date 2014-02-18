@@ -2,9 +2,12 @@
 
 ;;; GET FULMAR CHUNK-MAKING FUNCTIONS ;;;
 
+(require/typed fulmar/private/fulmar-core
+               [#:struct s-chunk ([name : Symbol] [body : Chunk])])
+
 ; Almost certainly not correct!
 ; This type definition needs to be fixed when we type-ify more fulmar.
-(define-type Chunk (Rec Ch (U String Symbol (Listof Ch))))
+(define-type Chunk (Rec Ch (U s-chunk String Symbol (Listof Ch))))
 
 (require/typed fulmar/standard-chunk
                [concat (Chunk * -> Chunk)]
@@ -207,10 +210,11 @@
       (concat name "[" (number->string (C++-array-type-length type)) "]"))] ; The number->string bit will go away when number literals are chunks
     [(C++-templated-type? type)
      #;=>
-     (concat (fmr-type-decl (C++-type-base type))
-             "< "
-             (apply between/attach "," " " (map fmr-type-decl (C++-templated-type-parameters type)))
-             " >")]
+     (between-spaces
+      `(,(concat (fmr-type-decl (C++-type-base type))
+                 "< "
+                 (apply between/attach "," " " (map fmr-type-decl (C++-templated-type-parameters type)))
+                 " >") ,name))]
     [(C++-qualified-type? type)
      #;=>
      (between-spaces `(,(render-simple-type type) ,name))]
@@ -223,4 +227,4 @@
 
 (: fmr-type-decl ((U C++-type C++-base-type) -> Chunk))
 (define (fmr-type-decl type)
-  (fmr-variable-decl type ""))
+  (fmr-variable-decl type '()))
