@@ -1,0 +1,38 @@
+#lang fulmar
+
+(require "type-decls.rkt")
+
+;;; ABBREVIATIONS FOR THIS FILE ;;;
+
+(define (fmr-assign var val)
+  (concat var " = " val))
+
+(define (fmr-for init check next . chunks)
+  (concat (function-call 'for (between "; " init check next)) " "
+          (body chunks)))
+
+(define (unsigned-int name)
+  (fmr-variable-decl (fmr-int '() 'unsigned) name))
+
+;;; BEGIN OUTPUT ;;;
+
+(pp-include 'process_record.h)
+(pp-include 'map)
+
+(void-function-define
+ 'process_all
+ (list (unsigned-int 'max))
+ ; Declare a pointer to an array of 10 ints, calling it x.
+ (fmr-variable-decl
+  (fmr-pointer (fmr-array (fmr-int '() 'signed) 10)) 'x)
+ ; Declare an array of 10 pointers to ints, calling it y.
+ (fmr-variable-decl
+  (fmr-array (fmr-pointer (fmr-int '() 'signed)) 10) 'y)
+ ; Declare a const, volatile map from integers to floats, calling it m.
+ (fmr-variable-decl
+  (fmr-template-type 'std::map 'const (fmr-int '() 'signed) 'volatile (fmr-float))
+  'm)
+ (fmr-for (fmr-assign (unsigned-int 'i) "0")
+          "i < max"
+          "++i"
+          (function-call 'process_record 'i)))
