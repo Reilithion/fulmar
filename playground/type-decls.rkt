@@ -214,7 +214,7 @@
       `(,(concat (fmr-type-decl (C++-type-base type))
                  "< "
                  (apply between/attach "," " " (map fmr-type-decl (C++-templated-type-parameters type)))
-                 " >") ,name))]
+                 " >") ,@(C++-qualified-type-qualifiers type) ,name))]
     [(C++-qualified-type? type)
      #;=>
      (between-spaces `(,(render-simple-type type) ,name))]
