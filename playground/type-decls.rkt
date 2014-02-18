@@ -1,5 +1,21 @@
 #lang typed/racket
 
+;;; GET FULMAR CHUNK-MAKING FUNCTIONS ;;;
+
+; Almost certainly not correct!
+; This type definition needs to be fixed when we type-ify more fulmar.
+(define-type Chunk (Rec Ch (U String Symbol (Listof Ch))))
+
+(require/typed fulmar/standard-chunk
+               [between (Chunk Chunk * -> Chunk)])
+
+(: between-spaces ((Listof Chunk) -> Chunk))
+(define (between-spaces chunks)
+  (apply between " " chunks))
+
+;;; GENERAL-PURPOSE STUFF ;;;
+;;  should go somewhere else  ;;
+
 (struct: Nothing ())
 (struct: (a) Just ([v : a]))
 
@@ -29,12 +45,16 @@
    (ann '(() . ()) (Pairof (Listof a) (Listof b)))
    lst))
 
+;;; TYPE DEFINITIONS ;;;
+
 (define-type NDBoolean (U Boolean 'unspecified))
 (define-type C++-base-type (U C++-pointable-type Symbol))
 (define-type C++-type-size (U Null 'long 'short 'longlong))
 (define-type C++-type-signedness (U Null 'signed 'unsigned))
 (define-type C++-type-qualifier (U 'const 'volatile))
 (define-type C++-float-type (U 'float 'double 'longdouble))
+
+;; Internal C++ type representation ;;
 
 (struct: C++-type
   ([base : C++-base-type])
@@ -117,3 +137,27 @@
     (let ([params (car sqa)]
           [qualifiers (cdr sqa)])
       (C++-templated-type base qualifiers params))))
+
+;;; TYPE RENDERING ;;;
+
+(: render-base-type (C++-base-type -> Chunk))
+(define (render-base-type type)
+  (if (C++-pointable-type? type)
+      (render-simple-type type)
+      type))
+
+(: render-simple-type (C++-qualified-type -> Chunk))
+(define (render-simple-type type)
+  (cond
+    [(C++-integer-type? type) (between-spaces
+                               `(,(C++-sizable-type-size type)
+                                 ,(C++-integer-type-signedness type)
+                                 ,(render-base-type (C++-type-base type))
+                                 ,@(C++-qualified-type-qualifiers type)))]
+    [(C++-sizable-type? type) (between-spaces
+                               `(,(C++-sizable-type-size type)
+                                 ,(render-base-type (C++-type-base type))
+                                 ,@(C++-qualified-type-qualifiers type)))]
+    [(C++-qualified-type? type) (between-spaces
+                                 `(,(render-base-type (C++-type-base type))
+                                   ,@(C++-qualified-type-qualifiers type)))]))
