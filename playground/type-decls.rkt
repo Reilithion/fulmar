@@ -7,7 +7,9 @@
 (define-type Chunk (Rec Ch (U String Symbol (Listof Ch))))
 
 (require/typed fulmar/standard-chunk
-               [between (Chunk Chunk * -> Chunk)])
+               [concat (Chunk * -> Chunk)]
+               [between (Chunk Chunk * -> Chunk)]
+               [between/attach (Chunk Chunk Chunk * -> Chunk)])
 
 (: between-spaces ((Listof Chunk) -> Chunk))
 (define (between-spaces chunks)
@@ -88,6 +90,16 @@
 
 ;;; PUBLIC CONSTRUCTORS ;;;
 
+(provide fmr-float
+         fmr-double
+         fmr-long-double
+         fmr-int
+         fmr-char
+         fmr-pointer
+         fmr-reference
+         fmr-array
+         fmr-template-type)
+
 (: fmr-float (C++-type-qualifier * -> C++-pointable-type))
 (define (fmr-float . qualifiers)
   (C++-pointable-type 'float qualifiers))
@@ -140,6 +152,9 @@
 
 ;;; TYPE RENDERING ;;;
 
+(provide fmr-variable-decl
+         fmr-type-decl)
+
 (: render-base-type (C++-base-type -> Chunk))
 (define (render-base-type type)
   (if (C++-pointable-type? type)
@@ -161,3 +176,51 @@
     [(C++-qualified-type? type) (between-spaces
                                  `(,(render-base-type (C++-type-base type))
                                    ,@(C++-qualified-type-qualifiers type)))]))
+
+(: fmr-variable-decl ((U C++-type C++-base-type) Chunk -> Chunk))
+(define (fmr-variable-decl type name)
+  (cond
+    [(and (C++-reference-type? type) (C++-array-type? (C++-type-base type)))
+     #;=>
+     (fmr-variable-decl
+      (C++-type-base type)
+      (concat "(&" (between-spaces `(,@(C++-qualified-type-qualifiers type) ,name)) ")"))]
+    [(and (C++-pointer-type? type) (C++-array-type? (C++-type-base type)))
+     #;=>
+     (fmr-variable-decl
+      (C++-type-base type)
+      (concat "(*" (between-spaces `(,@(C++-qualified-type-qualifiers type) ,name)) ")"))]
+    [(C++-reference-type? type)
+     #;=>
+     (fmr-variable-decl
+      (C++-type-base type)
+      (concat "&" (between-spaces `(,@(C++-qualified-type-qualifiers type) ,name))))]
+    [(C++-pointer-type? type)
+     #;=>
+     (fmr-variable-decl
+      (C++-type-base type)
+      (concat "*" (between-spaces `(,@(C++-qualified-type-qualifiers type) ,name))))]
+    [(C++-array-type? type)
+     #;=>
+     (fmr-variable-decl
+      (C++-type-base type)
+      (concat name "[" (number->string (C++-array-type-length type)) "]"))] ; The number->string bit will go away when number literals are chunks
+    [(C++-templated-type? type)
+     #;=>
+     (concat (fmr-type-decl (C++-type-base type))
+             "< "
+             (apply between/attach "," " " (map fmr-type-decl (C++-templated-type-parameters type)))
+             " >")]
+    [(C++-qualified-type? type)
+     #;=>
+     (between-spaces `(,(render-simple-type type) ,name))]
+    [(C++-type? type)
+     #;=>
+     (between-spaces `(,(render-base-type (C++-type-base type)) ,name))]
+    [else
+     #;=>
+     (between-spaces `(,type ,name))]))
+
+(: fmr-type-decl ((U C++-type C++-base-type) -> Chunk))
+(define (fmr-type-decl type)
+  (fmr-variable-decl type ""))
