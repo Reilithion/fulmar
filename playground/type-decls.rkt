@@ -166,64 +166,58 @@
 
 (: render-simple-type (C++-qualified-type -> Chunk))
 (define (render-simple-type type)
-  (cond
-    [(C++-integer-type? type) (between-spaces
-                               `(,(C++-sizable-type-size type)
-                                 ,(C++-integer-type-signedness type)
-                                 ,(render-base-type (C++-type-base type))
-                                 ,@(C++-qualified-type-qualifiers type)))]
-    [(C++-sizable-type? type) (between-spaces
-                               `(,(C++-sizable-type-size type)
-                                 ,(render-base-type (C++-type-base type))
-                                 ,@(C++-qualified-type-qualifiers type)))]
-    [(C++-qualified-type? type) (between-spaces
-                                 `(,(render-base-type (C++-type-base type))
-                                   ,@(C++-qualified-type-qualifiers type)))]))
+  (match type
+    [(C++-integer-type base qualifiers size signedness)
+     #;=>
+     (between-spaces `(,size ,signedness ,(render-base-type base) ,@qualifiers))]
+    [(C++-sizable-type base qualifiers size)
+     #;=>
+     (between-spaces `(,size ,(render-base-type base) ,@qualifiers))]
+    [(C++-qualified-type base qualifiers)
+     #;=>
+     (between-spaces `(,(render-base-type base) ,@qualifiers))]))
 
 (: fmr-variable-decl ((U C++-type C++-base-type) Chunk -> Chunk))
 (define (fmr-variable-decl type name)
-  (cond
-    [(and (C++-reference-type? type) (C++-array-type? (C++-type-base type)))
+  (match type
+    [(C++-reference-type (and base (C++-array-type _ _ _)) qualifiers)
      #;=>
-     (fmr-variable-decl
-      (C++-type-base type)
-      (concat "(&" (between-spaces `(,@(C++-qualified-type-qualifiers type) ,name)) ")"))]
-    [(and (C++-pointer-type? type) (C++-array-type? (C++-type-base type)))
+     (fmr-variable-decl base
+      (concat "(&" (between-spaces `(,@qualifiers ,name)) ")"))]
+    [(C++-pointer-type (and base (C++-array-type _ _ _)) qualifiers)
      #;=>
-     (fmr-variable-decl
-      (C++-type-base type)
-      (concat "(*" (between-spaces `(,@(C++-qualified-type-qualifiers type) ,name)) ")"))]
-    [(C++-reference-type? type)
+     (fmr-variable-decl base
+      (concat "(*" (between-spaces `(,@qualifiers ,name)) ")"))]
+    [(C++-reference-type base qualifiers)
      #;=>
-     (fmr-variable-decl
-      (C++-type-base type)
-      (concat "&" (between-spaces `(,@(C++-qualified-type-qualifiers type) ,name))))]
-    [(C++-pointer-type? type)
+     (fmr-variable-decl base
+      (concat "&" (between-spaces `(,@qualifiers ,name))))]
+    [(C++-pointer-type base qualifiers)
      #;=>
-     (fmr-variable-decl
-      (C++-type-base type)
-      (concat "*" (between-spaces `(,@(C++-qualified-type-qualifiers type) ,name))))]
-    [(C++-array-type? type)
+     (fmr-variable-decl base
+      (concat "*" (between-spaces `(,@qualifiers ,name))))]
+    [(C++-array-type base _ length)
      #;=>
-     (fmr-variable-decl
-      (C++-type-base type)
-      (concat name "[" (number->string (C++-array-type-length type)) "]"))] ; The number->string bit will go away when number literals are chunks
-    [(C++-templated-type? type)
+     (fmr-variable-decl base
+      (concat name "[" (number->string length) "]"))] ; The number->string bit will go away when number literals are chunks
+    [(C++-templated-type base qualifiers parameters)
      #;=>
      (between-spaces
-      `(,(concat (fmr-type-decl (C++-type-base type))
+      `(,(concat (fmr-type-decl base)
                  "< "
-                 (apply between/attach "," " " (map fmr-type-decl (C++-templated-type-parameters type)))
-                 " >") ,@(C++-qualified-type-qualifiers type) ,name))]
-    [(C++-qualified-type? type)
+                 (apply between/attach "," " " (map fmr-type-decl parameters))
+                 " >") ,@qualifiers ,name))]
+    [(and t (C++-qualified-type _ _))
      #;=>
-     (between-spaces `(,(render-simple-type type) ,name))]
-    [(C++-type? type)
+     (between-spaces `(,(render-simple-type t) ,name))]
+    [(C++-type base)
      #;=>
-     (between-spaces `(,(render-base-type (C++-type-base type)) ,name))]
+     (between-spaces `(,(render-base-type base) ,name))]
     [else
      #;=>
-     (between-spaces `(,type ,name))]))
+     (if (symbol? type)
+         (between-spaces `(,type ,name))
+         (error "Unexpected type: " type))]))
 
 (: fmr-type-decl ((U C++-type C++-base-type) -> Chunk))
 (define (fmr-type-decl type)
